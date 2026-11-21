@@ -173,13 +173,8 @@ fn draw_reader(frame: &mut Frame, app: &App, area: Rect) {
             let total_pages = pag.pages.len().max(1);
             let pct = ((app.current_page + 1) * 100) / total_pages;
 
-            // Pala One-style inverted top bar: truncated title left, percentage + battery right
-            let batt_str = match app.battery {
-                Some((pct_b, true)) => format!(" · ⚡{pct_b}%"),
-                Some((pct_b, false)) => format!(" · {pct_b}%"),
-                None => String::new(),
-            };
-            let right_label = format!(" {pct}%{batt_str} ");
+            // Pala One-style inverted top bar: truncated title left, percentage right
+            let right_label = format!(" {pct}% ");
             let max_title_len = (header_area.width as usize).saturating_sub(right_label.len() + 2);
             let title_str = truncate_with_ellipsis(&book.title, max_title_len);
             let pad = (header_area.width as usize)

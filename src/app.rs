@@ -59,10 +59,6 @@ pub struct App {
     // Quick Note state
     pub note_buf: String,
 
-    // Battery status (percent, charging)
-    pub battery: Option<(u8, bool)>,
-    pub battery_checked_at: Instant,
-
     // Search state
     pub search_query: String,
     pub search_matches: Vec<(usize, String)>,
@@ -115,8 +111,6 @@ impl App {
             help_scroll: 0,
             bm_selected: 0,
             note_buf: String::new(),
-            battery: read_battery_status(),
-            battery_checked_at: Instant::now(),
             search_query: String::new(),
             search_matches: Vec::new(),
             search_selected: 0,
@@ -376,12 +370,6 @@ impl App {
                 }
                 redraw = true;
             }
-        }
-
-        if self.battery_checked_at.elapsed() >= Duration::from_secs(30) {
-            self.battery_checked_at = Instant::now();
-            self.battery = read_battery_status();
-            redraw = true;
         }
 
         if self.mode == ScreenMode::Rsvp
@@ -1060,22 +1048,6 @@ KeyCode::PageUp => {
     }
 }
 
-fn read_battery_status() -> Option<(u8, bool)> {
-    let entries = std::fs::read_dir("/sys/class/power_supply").ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let cap_path = path.join("capacity");
-        if let Ok(raw_cap) = std::fs::read_to_string(&cap_path) {
-            if let Ok(pct) = raw_cap.trim().parse::<u8>() {
-                let charging = std::fs::read_to_string(path.join("status"))
-                    .is_ok_and(|s| s.trim().eq_ignore_ascii_case("charging"));
-                return Some((pct.min(100), charging));
-            }
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1289,6 +1261,5 @@ mod tests {
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(release_esc(KeyCode::Esc));
         assert_eq!(app.mode, ScreenMode::Reader);
-        let _ = read_battery_status();
     }
 }
