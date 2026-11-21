@@ -1,0 +1,5 @@
+/target/
+*.png
+*.jpg
+mutants.out/
+mutants.out.old/
