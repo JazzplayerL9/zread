@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=zread
+Comment=TUI E-Reader
+Exec=/usr/local/bin/zread
+Icon=share/images/zread.png
+Terminal=true
+Categories=Utility;
+StartupNotify=false

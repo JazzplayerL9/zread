@@ -3,6 +3,8 @@ name = "zread"
 version = "0.1.0"
 edition = "2021"
 description = "Lightweight TUI e-reader for Cardputer Zero"
+license = "MIT"
+repository = "https://github.com/JazzplayerL9/zread"
 
 [dependencies]
 crossterm = "0.28"

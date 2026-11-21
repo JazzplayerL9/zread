@@ -1,5 +1,6 @@
 /target/
 *.png
+!zread_icon.png
 *.jpg
 mutants.out/
 mutants.out.old/
