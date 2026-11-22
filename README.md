@@ -38,6 +38,8 @@ A lightweight, distraction-free TUI e-reader written in Rust (`ratatui` + `cross
 | `v` | Cycle color theme |
 | `M` | Cycle margins (`1`, `2`, `4` chars) |
 | `P` | Toggle compact paragraph spacing |
+| `H` | Toggle zen mode (hide top/bottom bars) |
+| `4`–`8` | Quick keys: `4` TOC, `5` Mark, `6` Search, `7` RSVP, `8` Help |
 | `l` / `Esc` | Open Library |
 | `?` | Scrollable command help |
 | Hold `Esc` (3s) | Save progress & quit |

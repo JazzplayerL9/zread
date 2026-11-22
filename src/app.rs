@@ -300,7 +300,8 @@ impl App {
         };
         let margin = self.margin_chars();
         let text_w = width.saturating_sub(margin.saturating_mul(2)) as usize;
-        let text_h = height.saturating_sub(2) as usize;
+        let chrome_rows = if self.config.zen_mode { 0 } else { 2 };
+        let text_h = height.saturating_sub(chrome_rows) as usize;
         let paginated = paginate_book(book, text_w, text_h, self.config.compact_paragraphs);
         let page_idx = anchor
             .map_or(0, |(ch, para)| find_page_for_position(&paginated.pages, ch, para));
@@ -524,12 +525,12 @@ impl App {
                         .unwrap_or(self.library.len() - 1);
                 }
             }
-            KeyCode::Enter | KeyCode::Char(' ' | 'c') | KeyCode::Right => {
+            KeyCode::Enter | KeyCode::Char(' ' | 'c' | '4') | KeyCode::Right => {
                 if let Some(entry) = self.library.get(self.lib_selected).cloned() {
                     self.open_book(&entry.path);
                 }
             }
-            KeyCode::Char('d') | KeyCode::Backspace | KeyCode::Delete => {
+            KeyCode::Char('d' | '6') | KeyCode::Backspace | KeyCode::Delete => {
                 if let Some(entry) = self.library.get(self.lib_selected).cloned() {
                     if entry.protected {
                         self.status_msg = Some(" Help guide cannot be deleted".to_string());
@@ -538,10 +539,10 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('v') => {
+            KeyCode::Char('v' | '7') => {
                 self.state.theme_idx = (self.state.theme_idx + 1) % THEMES.len();
             }
-            KeyCode::Char('g') => {
+            KeyCode::Char('g' | '5') => {
                 self.gut_query.clear();
                 self.gut_typing = true;
                 self.gut_results.clear();
@@ -549,7 +550,7 @@ impl App {
                 self.gut_status = Some("Type query & press Enter".to_string());
                 self.mode = ScreenMode::Gutenberg;
             }
-            KeyCode::Char('R') => {
+            KeyCode::Char('R' | '8') => {
                 self.refresh_library();
             }
             _ => {}
@@ -642,6 +643,11 @@ KeyCode::PageUp => {
             }
             KeyCode::Char('P') => {
                 self.config.compact_paragraphs = !self.config.compact_paragraphs;
+                let anchor = self.current_anchor();
+                self.repaginate(self.last_size.0, self.last_size.1, anchor);
+            }
+            KeyCode::Char('H') => {
+                self.config.zen_mode = !self.config.zen_mode;
                 let anchor = self.current_anchor();
                 self.repaginate(self.last_size.0, self.last_size.1, anchor);
             }
@@ -1236,6 +1242,9 @@ mod tests {
         let old_compact = app.config.compact_paragraphs;
         app.handle_key(key(KeyCode::Char('P')));
         assert_ne!(app.config.compact_paragraphs, old_compact);
+        let old_zen = app.config.zen_mode;
+        app.handle_key(key(KeyCode::Char('H')));
+        assert_ne!(app.config.zen_mode, old_zen);
 
         app.handle_key(key(KeyCode::Char('?')));
         assert_eq!(app.mode, ScreenMode::Help);

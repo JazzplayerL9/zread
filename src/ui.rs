@@ -117,9 +117,9 @@ fn draw_library(frame: &mut Frame, app: &App, area: Rect) {
 
     let default_status = app.status_msg.clone().unwrap_or_else(|| {
         if app.book.is_some() {
-            " f/x:nav c:open g:get d:del v:theme Esc:back".to_string()
+            " 4:open 5:get 6:del 7:theme 8:ref Esc:back".to_string()
         } else {
-            " f/x:nav c:open g:get d:del v:theme Esc3s:quit".to_string()
+            " 4:open 5:get 6:del 7:theme 8:ref Esc3s:quit".to_string()
         }
     });
     let footer = Paragraph::new(status_bar_text(app, default_status))
@@ -151,6 +151,41 @@ fn draw_library(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_reader(frame: &mut Frame, app: &App, area: Rect) {
     let theme = app.theme();
+    let margin = app.margin_chars();
+
+    if app.config.zen_mode {
+        let text_area = Rect {
+            x: area.x.saturating_add(margin),
+            y: area.y,
+            width: area.width.saturating_sub(margin.saturating_mul(2)),
+            height: area.height,
+        };
+        if let Some(pag) = &app.paginated {
+            if let Some(page) = pag.pages.get(app.current_page) {
+                let lines: Vec<Line> = page
+                    .lines
+                    .iter()
+                    .map(|l| Line::from(Span::styled(l.as_str(), Style::default().fg(theme.fg))))
+                    .collect();
+                frame.render_widget(Paragraph::new(lines), text_area);
+            }
+        }
+        if let Some(rem) = app.esc_hold_remaining_secs() {
+            if rem > 0 && app.esc_hold_start.is_some_and(|s| s.elapsed().as_millis() > 350) {
+                let [_, bar] = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(1), Constraint::Length(1)])
+                    .areas(area);
+                frame.render_widget(
+                    Paragraph::new(format!(" Hold ESC to quit ({rem}s)..."))
+                        .style(Style::default().bg(theme.status_bg).fg(theme.status_fg)),
+                    bar,
+                );
+            }
+        }
+        return;
+    }
+
     let [header_area, body_area, footer_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -160,7 +195,6 @@ fn draw_reader(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .areas(area);
 
-    let margin = app.margin_chars();
     let text_area = Rect {
         x: body_area.x.saturating_add(margin),
         y: body_area.y,
@@ -479,13 +513,15 @@ fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(" v             : Cycle color theme"),
         Line::from(" M             : Cycle margins (1/2/4)"),
         Line::from(" P             : Toggle compact paras"),
+        Line::from(" H             : Toggle zen mode (bars)"),
         Line::from(" l             : Open Library"),
         Line::from(Span::styled("Library & Online", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))),
         Line::from(" f/x           : Move selection"),
-        Line::from(" c/Enter       : Open / Download book"),
-        Line::from(" g             : Search online (SE/PG/IA)"),
-        Line::from(" d             : Delete book (non-help)"),
-        Line::from(" R             : Refresh library"),
+        Line::from(" c/Enter/4     : Open / Download book"),
+        Line::from(" g / 5         : Search online (SE/PG/IA)"),
+        Line::from(" d / 6         : Delete book (non-help)"),
+        Line::from(" v / 7         : Cycle color theme"),
+        Line::from(" R / 8         : Refresh library"),
         Line::from(Span::styled("RSVP & General", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))),
         Line::from(" Space         : Pause / Resume RSVP"),
         Line::from(" f/x or +/-    : RSVP WPM (+/- 20)"),
