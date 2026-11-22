@@ -623,11 +623,11 @@ KeyCode::PageUp => {
                 self.jump_chapter(-1);
                 self.save_current_progress();
             }
-            KeyCode::Char('g') => {
+            KeyCode::Char('g') | KeyCode::Home => {
                 self.current_page = 0;
                 self.save_current_progress();
             }
-            KeyCode::Char('G') => {
+            KeyCode::Char('G') | KeyCode::End => {
                 self.current_page = total_pages.saturating_sub(1);
                 self.save_current_progress();
             }
@@ -645,13 +645,13 @@ KeyCode::PageUp => {
                 let anchor = self.current_anchor();
                 self.repaginate(self.last_size.0, self.last_size.1, anchor);
             }
-            KeyCode::Char('t') => {
+            KeyCode::Char('t' | '4') => {
                 if let Some((ch, _)) = self.current_anchor() {
                     self.toc_selected = ch;
                 }
                 self.mode = ScreenMode::Toc;
             }
-            KeyCode::Char('m') => {
+            KeyCode::Char('m' | '5') => {
                 self.add_current_bookmark();
             }
             KeyCode::Char('N') => {
@@ -662,17 +662,17 @@ KeyCode::PageUp => {
                 self.bm_selected = 0;
                 self.mode = ScreenMode::Bookmarks;
             }
-            KeyCode::Char('/') => {
+            KeyCode::Char('/' | '6') => {
                 self.search_query.clear();
                 self.search_matches.clear();
                 self.search_selected = 0;
                 self.mode = ScreenMode::Search;
             }
-            KeyCode::Char('?') => {
+            KeyCode::Char('?' | '8') => {
                 self.help_scroll = 0;
                 self.mode = ScreenMode::Help;
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('r' | '7') => {
                 self.enter_rsvp();
             }
             _ => {}
