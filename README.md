@@ -64,7 +64,6 @@ A lightweight, distraction-free TUI e-reader written in Rust (`ratatui` + `cross
     "library_dir": "~/Books",
     "extra_dirs": ["~/Documents"],
     "theme": "Warm Dark",
-    "font_size": 10,
     "margin": 1,
     "compact_paragraphs": false,
     "wpm": 260,
