@@ -1,0 +1,33 @@
+{
+  "app_name": "zread",
+  "package_name": "zread",
+  "version": "0.1.0",
+  "store": {
+    "summary": "Lightweight TUI e-reader for EPUB, Markdown, and TXT",
+    "description": "A distraction-free Rust TUI e-reader built for the CardputerZero 320x170 screen. Supports EPUB 2/3, Markdown, and TXT with hyphen-aware wrapping, Table of Contents, bookmarks, quick Markdown notes, in-book search, RSVP speed-reading, 4 low-glare themes, and online book search/download from Standard Ebooks, Project Gutenberg, and Internet Archive.",
+    "icon": "assets/images/zread_icon.png",
+    "screenshots": [
+      "assets/images/screenshot01.png"
+    ],
+    "categories": [
+      "Education",
+      "Creative & Office"
+    ],
+    "permissions": {
+      "camera": false,
+      "microphone": false,
+      "imu": false,
+      "network": true,
+      "additional_hardware": false,
+      "background_service": false,
+      "external_display": false
+    },
+    "author": {
+      "display_name": "JazzplayerL9",
+      "github": "JazzplayerL9"
+    },
+    "source_repo": "https://github.com/JazzplayerL9/zread",
+    "license": "MIT",
+    "share_code": "ZRED"
+  }
+}
