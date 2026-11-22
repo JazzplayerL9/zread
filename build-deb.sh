@@ -13,12 +13,12 @@ cargo build --release --target aarch64-unknown-linux-musl --offline
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
-mkdir -p "$STAGE/data/usr/local/bin" \
+mkdir -p "$STAGE/data/usr/bin" \
          "$STAGE/data/usr/share/APPLaunch/applications" \
          "$STAGE/data/usr/share/APPLaunch/share/images" \
          "$STAGE/control"
 
-install -m 755 "$BIN" "$STAGE/data/usr/local/bin/zread"
+install -m 755 "$BIN" "$STAGE/data/usr/bin/zread"
 install -m 644 zread.desktop "$STAGE/data/usr/share/APPLaunch/applications/zread.desktop"
 install -m 644 assets/images/zread_icon.png "$STAGE/data/usr/share/APPLaunch/share/images/zread.png"
 

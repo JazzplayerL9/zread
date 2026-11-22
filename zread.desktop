@@ -2,7 +2,7 @@
 Type=Application
 Name=zread
 Comment=TUI E-Reader
-Exec=/usr/local/bin/zread
+Exec=/usr/bin/zread
 Icon=share/images/zread.png
 Terminal=true
 Categories=Utility;
