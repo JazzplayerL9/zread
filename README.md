@@ -87,7 +87,7 @@ cargo build --release --target aarch64-unknown-linux-musl
 
 ### Deploy binary & launcher entry
 
-1. Install the `.deb` package (`sudo apt install ./zread_0.1.0-1_arm64.deb`), or copy the static binary to `/usr/bin/zread`.
+1. Install the `.deb` package (`sudo apt install ./zread_0.2.0-1_arm64.deb`), or copy the static binary to `/usr/bin/zread`.
 2. Install the launcher icon and `.desktop` entry:
    ```bash
    sudo install -m 644 zread_icon.png /usr/share/APPLaunch/share/images/zread.png

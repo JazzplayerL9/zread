@@ -1,7 +1,7 @@
 {
   "app_name": "zread",
   "package_name": "zread",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "store": {
     "summary": "Lightweight TUI e-reader for EPUB, Markdown, and TXT",
     "description": "A distraction-free Rust TUI e-reader built for the CardputerZero 320x170 screen. Supports EPUB 2/3, Markdown, and TXT with hyphen-aware wrapping, Table of Contents, bookmarks, quick Markdown notes, in-book search, RSVP speed-reading, 4 low-glare themes, and online book search/download from Standard Ebooks, Project Gutenberg, and Internet Archive.",

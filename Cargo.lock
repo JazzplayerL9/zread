@@ -775,12 +775,13 @@ dependencies = [
 
 [[package]]
 name = "zread"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crossterm",
  "ratatui",
  "roxmltree",
  "serde",
  "serde_json",
+ "unicode-width 0.2.0",
  "zip",
 ]

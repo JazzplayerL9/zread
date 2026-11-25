@@ -97,7 +97,7 @@ fn split_plain_paragraphs(text: &str) -> Vec<String> {
     let mut paragraphs = Vec::new();
     let mut current = String::new();
 
-    for raw_line in text.lines() {
+    for raw_line in text.trim_start_matches('\u{feff}').lines() {
         let trimmed = raw_line.trim();
         if trimmed.is_empty() {
             if !current.is_empty() {
@@ -484,17 +484,19 @@ fn collect_inline_text(node: roxmltree::Node) -> String {
 }
 
 fn normalize_ws(s: &str) -> String {
-    let normalized_punct: String = s
-        .chars()
-        .flat_map(|c| match c {
-            '\u{2018}' | '\u{2019}' | '`' => ['\'', '\0', '\0'].into_iter().take(1),
-            '\u{201c}' | '\u{201d}' | '\u{00ab}' | '\u{00bb}' => ['"', '\0', '\0'].into_iter().take(1),
-            '\u{2014}' | '\u{2013}' => ['-', '\0', '\0'].into_iter().take(1),
-            '\u{2026}' => ['.', '.', '.'].into_iter().take(3),
-            '\u{00a0}' | '\r' => [' ', '\0', '\0'].into_iter().take(1),
-            other => [other, '\0', '\0'].into_iter().take(1),
-        })
-        .collect();
+    let mut normalized_punct = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\u{feff}' => {}
+            '\u{2018}' | '\u{2019}' | '\u{201a}' | '`' => normalized_punct.push('\''),
+            '\u{201c}' | '\u{201d}' | '\u{201e}' | '\u{00ab}' | '\u{00bb}' | '\u{2039}'
+            | '\u{203a}' => normalized_punct.push('"'),
+            '\u{2013}' | '\u{2014}' | '\u{2015}' => normalized_punct.push('-'),
+            '\u{2026}' => normalized_punct.push_str("..."),
+            '\u{00a0}' | '\r' => normalized_punct.push(' '),
+            other => normalized_punct.push(other),
+        }
+    }
     normalized_punct
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -566,8 +568,8 @@ mod tests {
     #[test]
     fn punctuation_and_artifact_filtering() {
         assert_eq!(
-            normalize_ws("“Hello”—world…\u{00a0}‘test’"),
-            "\"Hello\"-world... 'test'"
+            normalize_ws("\u{feff}“Hello”―world…\u{00a0}‘test’‚„‹›"),
+            "\"Hello\"-world... 'test''\"\"\""
         );
         assert!(is_page_artifact(""));
         assert!(is_page_artifact("42"));

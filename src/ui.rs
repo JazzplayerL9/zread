@@ -264,7 +264,7 @@ fn truncate_with_ellipsis(s: &str, max_chars: usize) -> String {
         return s.chars().take(max_chars).collect();
     }
     let prefix: String = s.chars().take(max_chars - 3).collect();
-    format!("{prefix}...")
+    format!("{}...", prefix.trim_end())
 }
 
 fn draw_note(frame: &mut Frame, app: &App, area: Rect) {

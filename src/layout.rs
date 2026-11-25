@@ -1,4 +1,5 @@
 use crate::book::Book;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Debug, Clone)]
 pub struct RenderedLine {
@@ -35,7 +36,14 @@ pub fn paginate_book(
     for (ch_idx, chapter) in book.chapters.iter().enumerate() {
         chapter_first_line.push(all_lines.len());
         for (p_idx, para) in chapter.paragraphs.iter().enumerate() {
-            for wrapped in wrap_paragraph(para, wrap_width) {
+            let formatted;
+            let text_to_wrap = if compact_paragraphs && p_idx > 0 {
+                formatted = format!("  {para}");
+                formatted.as_str()
+            } else {
+                para.as_str()
+            };
+            for wrapped in wrap_paragraph(text_to_wrap, wrap_width) {
                 all_lines.push(RenderedLine {
                     text: wrapped,
                     chapter_idx: ch_idx,
@@ -114,13 +122,18 @@ fn wrap_paragraph(para: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut current_len = 0usize;
+    let leading_indent = para.starts_with("  ");
 
     for raw_word in para.split_whitespace() {
-        // Pala One-style hyphen-aware splitting: allow breaking after '-' on narrow screens.
-        let pieces = split_after_hyphens(raw_word);
+        if current.is_empty() && lines.is_empty() && leading_indent && width > 4 {
+            current.push_str("  ");
+            current_len = 2;
+        }
+        // Pala One-style breakable punctuation splitting (hyphens, slashes, etc.).
+        let pieces = split_after_breakable(raw_word);
         for (piece_idx, word) in pieces.iter().enumerate() {
-            let need_space = piece_idx == 0 && !current.is_empty();
-            let word_len = word.chars().count();
+            let need_space = piece_idx == 0 && !current.is_empty() && current != "  ";
+            let word_len = UnicodeWidthStr::width(*word);
             let extra = usize::from(need_space);
 
             if current.is_empty() {
@@ -155,14 +168,22 @@ fn wrap_paragraph(para: &str, width: usize) -> Vec<String> {
     lines
 }
 
-fn split_after_hyphens(word: &str) -> Vec<&str> {
+fn is_breakable_punct(ch: char) -> bool {
+    matches!(
+        ch,
+        '-' | '/' | '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}'
+    )
+}
+
+fn split_after_breakable(word: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
     for (idx, ch) in word.char_indices() {
-        if ch == '-' && idx + 1 < word.len() {
-            if let Some(seg) = word.get(start..=idx) {
+        let next = idx + ch.len_utf8();
+        if is_breakable_punct(ch) && next < word.len() {
+            if let Some(seg) = word.get(start..next) {
                 parts.push(seg);
-                start = idx + 1;
+                start = next;
             }
         }
     }
@@ -187,8 +208,13 @@ fn push_hard_wrapped(
     let mut chunk = String::new();
     let mut len = 0;
     for ch in word.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if len > 0 && len + cw > width {
+            lines.push(std::mem::take(&mut chunk));
+            len = 0;
+        }
         chunk.push(ch);
-        len += 1;
+        len += cw;
         if len >= width {
             lines.push(std::mem::take(&mut chunk));
             len = 0;
@@ -207,7 +233,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn hyphen_wrapping_and_hard_wrap() {
+    fn hyphen_and_slash_wrapping_and_hard_wrap() {
         let wrapped = wrap_paragraph("twenty-seven-year-old supercalifragilistic end-", 14);
         assert_eq!(
             wrapped,
@@ -217,6 +243,11 @@ mod tests {
                 "supercalifragi",
                 "listic end-",
             ]
+        );
+        // Slash-separated URLs/tokens break cleanly after '/'
+        assert_eq!(
+            wrap_paragraph("https://cardputer.cc/docs", 16),
+            vec!["https://", "cardputer.cc/", "docs"]
         );
         // Exact-width hard-wrapped word (no remainder)
         assert_eq!(wrap_paragraph("abcd", 2), vec!["ab", "cd"]);
@@ -247,6 +278,11 @@ mod tests {
         let compact = paginate_book(&book, 20, 3, true);
         assert!(compact.pages.len() < relaxed.pages.len());
         assert_eq!(compact.chapter_start_pages.len(), 2);
+        // Compact mode indents subsequent paragraphs by 2 spaces
+        assert_eq!(
+            compact.pages.first().and_then(|p| p.lines.get(1)).map(String::as_str),
+            Some("  Two")
+        );
         // Relaxed has leading blank lines skipped at page boundaries
         assert!(relaxed.pages.iter().all(|p| p.lines.first().is_some_and(|l| !l.is_empty())));
         let c2_page = find_page_for_position(&relaxed.pages, 1, 0);

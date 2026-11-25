@@ -1,6 +1,6 @@
 [package]
 name = "zread"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Lightweight TUI e-reader for Cardputer Zero"
 license = "MIT"
@@ -12,6 +12,7 @@ ratatui = { version = "0.29", default-features = false, features = ["crossterm"]
 roxmltree = "0.20"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+unicode-width = "0.2"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
 [profile.release]
