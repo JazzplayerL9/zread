@@ -1,5 +1,6 @@
 /target/
 *.deb
 *.jpg
+*.mp4
 mutants.out/
 mutants.out.old/
