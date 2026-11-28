@@ -1,6 +1,6 @@
 use crate::book::Book;
 use crate::config::Config;
-use crate::gutenberg::{download_book, search_gutenberg, GutenbergBook};
+use crate::catalog::{download_book, search_catalog, CatalogBook};
 use crate::layout::{find_page_for_position, paginate_book, PaginatedBook};
 use crate::state::AppState;
 use crate::theme::{theme_index_by_name, Theme, THEMES};
@@ -67,11 +67,11 @@ pub struct App {
     // Gutenberg search state
     pub gut_query: String,
     pub gut_typing: bool,
-    pub gut_results: Vec<GutenbergBook>,
+    pub gut_results: Vec<CatalogBook>,
     pub gut_selected: usize,
     pub gut_status: Option<String>,
     pub gut_busy: bool,
-    pub gut_search_rx: Option<Receiver<Result<Vec<GutenbergBook>, String>>>,
+    pub gut_search_rx: Option<Receiver<Result<Vec<CatalogBook>, String>>>,
     pub gut_dl_rx: Option<Receiver<Result<PathBuf, String>>>,
 
     // RSVP speed-reader state
@@ -811,7 +811,7 @@ KeyCode::PageUp => {
                     let (tx, rx) = mpsc::channel();
                     self.gut_search_rx = Some(rx);
                     std::thread::spawn(move || {
-                        let _ = tx.send(search_gutenberg(&query));
+                        let _ = tx.send(search_catalog(&query));
                     });
                 }
                 KeyCode::Backspace => {

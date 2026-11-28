@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Clone)]
-pub struct GutenbergBook {
+pub struct CatalogBook {
     pub id: String,
     pub source: &'static str,
     pub title: String,
@@ -59,7 +59,7 @@ struct IaFile {
     private: Option<String>,
 }
 
-pub fn search_gutenberg(query: &str) -> Result<Vec<GutenbergBook>, String> {
+pub fn search_catalog(query: &str) -> Result<Vec<CatalogBook>, String> {
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
@@ -80,11 +80,11 @@ pub fn search_gutenberg(query: &str) -> Result<Vec<GutenbergBook>, String> {
     search_archive_org(trimmed)
 }
 
-fn search_standard_ebooks(query: &str) -> Result<Vec<GutenbergBook>, String> {
+fn search_standard_ebooks(query: &str) -> Result<Vec<CatalogBook>, String> {
     let encoded = url_encode(query);
-    let url = format!("https://standardebooks.org/feeds/opds/all?query={encoded}");
+    let url = format!("https://standardebooks.org/ebooks?query={encoded}");
     let output = Command::new("curl")
-        .args(["-fsSL", "--max-time", "5", "-A", "zread/0.1", &url])
+        .args(["-fsSL", "--max-time", "8", "-A", "zread/0.2", &url])
         .output()
         .map_err(|e| format!("Failed to run curl: {e}"))?;
 
@@ -92,74 +92,76 @@ fn search_standard_ebooks(query: &str) -> Result<Vec<GutenbergBook>, String> {
         return Err("Standard Ebooks unavailable".to_string());
     }
 
-    let xml = String::from_utf8_lossy(&output.stdout);
-    let doc = roxmltree::Document::parse(&xml).map_err(|e| format!("Bad OPDS XML: {e}"))?;
-
-    let mut books = Vec::new();
-    for entry in doc
-        .descendants()
-        .filter(|n| n.is_element() && n.tag_name().name() == "entry")
-    {
-        let title = entry
-            .children()
-            .find(|n| n.is_element() && n.tag_name().name() == "title")
-            .and_then(|n| n.text())
-            .map_or("", str::trim)
-            .to_string();
-        if title.is_empty() {
-            continue;
-        }
-        let author = entry
-            .children()
-            .find(|n| n.is_element() && n.tag_name().name() == "author")
-            .and_then(|a| {
-                a.children()
-                    .find(|n| n.is_element() && n.tag_name().name() == "name")
-            })
-            .and_then(|n| n.text())
-            .map_or_else(|| "Unknown".to_string(), |s| s.trim().to_string());
-
-        let epub_url = entry
-            .children()
-            .filter(|n| n.is_element() && n.tag_name().name() == "link")
-            .find(|n| {
-                n.attribute("type") == Some("application/epub+zip")
-                    && n.attribute("title")
-                        .is_some_and(|t| t.contains("Recommended"))
-            })
-            .or_else(|| {
-                entry
-                    .children()
-                    .filter(|n| n.is_element() && n.tag_name().name() == "link")
-                    .find(|n| n.attribute("type") == Some("application/epub+zip"))
-            })
-            .and_then(|n| n.attribute("href"))
-            .map(str::to_string);
-
-        if let Some(url) = epub_url {
-            let id = entry
-                .children()
-                .find(|n| n.is_element() && n.tag_name().name() == "id")
-                .and_then(|n| n.text())
-                .and_then(|s| s.rsplit('/').next())
-                .unwrap_or("se")
-                .to_string();
-            books.push(GutenbergBook {
-                id,
-                source: "SE",
-                title,
-                author,
-                epub_url: Some(url),
-                txt_url: None,
-                ia_identifier: None,
-            });
-        }
-    }
-
-    Ok(books)
+    let html = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_standard_ebooks_html(&html))
 }
 
-fn search_gutendex(query: &str) -> Result<Vec<GutenbergBook>, String> {
+fn parse_standard_ebooks_html(html: &str) -> Vec<CatalogBook> {
+    let mut books = Vec::new();
+    for chunk in html.split("<li typeof=\"schema:Book\" about=\"").skip(1) {
+        let Some(slug_path) = chunk.split('"').next() else {
+            continue;
+        };
+        let Some(slug) = slug_path.strip_prefix("/ebooks/") else {
+            continue;
+        };
+        if slug.is_empty() {
+            continue;
+        }
+        let end_li = chunk.find("</li>").unwrap_or(chunk.len());
+        let item = chunk.get(..end_li).unwrap_or(chunk);
+
+        let mut names = extract_schema_names(item);
+        if names.is_empty() {
+            continue;
+        }
+        let title = names.remove(0);
+        let author = if names.is_empty() {
+            "Unknown".to_string()
+        } else {
+            names.join(", ")
+        };
+        let file_slug = slug.replace('/', "_");
+        let epub_url = format!(
+            "https://standardebooks.org/ebooks/{slug}/downloads/{file_slug}.epub?source=download"
+        );
+        books.push(CatalogBook {
+            id: file_slug,
+            source: "SE",
+            title,
+            author,
+            epub_url: Some(epub_url),
+            txt_url: None,
+            ia_identifier: None,
+        });
+    }
+    books
+}
+
+fn extract_schema_names(html: &str) -> Vec<String> {
+    let marker = "<span property=\"schema:name\">";
+    let mut names = Vec::new();
+    for part in html.split(marker).skip(1) {
+        if let Some((raw, _)) = part.split_once("</span>") {
+            let decoded = decode_basic_entities(raw.trim());
+            if !decoded.is_empty() {
+                names.push(decoded);
+            }
+        }
+    }
+    names
+}
+
+fn decode_basic_entities(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+}
+
+fn search_gutendex(query: &str) -> Result<Vec<CatalogBook>, String> {
     let encoded = url_encode(query);
     let url = format!("https://gutendex.com/books?search={encoded}");
     let output = Command::new("curl")
@@ -198,7 +200,7 @@ fn search_gutendex(query: &str) -> Result<Vec<GutenbergBook>, String> {
                 .find(|(k, _)| k.starts_with("text/plain"))
                 .map(|(_, v)| v.clone());
 
-            GutenbergBook {
+            CatalogBook {
                 id: item.id.to_string(),
                 source: "PG",
                 title: item.title,
@@ -214,7 +216,7 @@ fn search_gutendex(query: &str) -> Result<Vec<GutenbergBook>, String> {
     Ok(books)
 }
 
-fn search_archive_org(query: &str) -> Result<Vec<GutenbergBook>, String> {
+fn search_archive_org(query: &str) -> Result<Vec<CatalogBook>, String> {
     let encoded = url_encode(&format!(
         "title:({query}) AND format:(EPUB) AND mediatype:(texts) AND NOT access-restricted-item:true"
     ));
@@ -257,7 +259,7 @@ fn search_archive_org(query: &str) -> Result<Vec<GutenbergBook>, String> {
                     .to_string(),
                 _ => doc.identifier.clone(),
             };
-            GutenbergBook {
+            CatalogBook {
                 id: doc.identifier.clone(),
                 source: "IA",
                 title,
@@ -272,7 +274,7 @@ fn search_archive_org(query: &str) -> Result<Vec<GutenbergBook>, String> {
     Ok(books)
 }
 
-pub fn download_book(book: &GutenbergBook, library_dir: &Path) -> Result<PathBuf, String> {
+pub fn download_book(book: &CatalogBook, library_dir: &Path) -> Result<PathBuf, String> {
     let (url, ext) = if let Some(u) = &book.epub_url {
         (u.clone(), "epub")
     } else if let Some(u) = &book.txt_url {
@@ -288,7 +290,7 @@ pub fn download_book(book: &GutenbergBook, library_dir: &Path) -> Result<PathBuf
     let dest = library_dir.join(format!("{safe_name}_{}.{ext}", sanitize_filename(&book.id)));
 
     let output = Command::new("curl")
-        .args(["-fsSL", "--max-time", "45", "-o"])
+        .args(["-fsSL", "--max-time", "45", "-A", "zread/0.2", "-o"])
         .arg(&dest)
         .arg(&url)
         .output()
@@ -377,5 +379,32 @@ mod tests {
         assert_eq!(url_encode("walden & pond"), "walden%20%26%20pond");
         assert_eq!(sanitize_filename("Walden: Or, Life!"), "Walden__Or__Life");
         assert_eq!(sanitize_filename("///"), "book");
+    }
+
+    #[test]
+    fn parse_standard_ebooks_search_html() {
+        let sample = r#"
+<ol>
+<li typeof="schema:Book" about="/ebooks/edgar-allan-poe/short-fiction">
+  <p><a href="/ebooks/edgar-allan-poe/short-fiction" property="schema:url"><span property="schema:name">Short Fiction &amp; Tales</span></a></p>
+  <p class="author" typeof="schema:Person" property="schema:author" resource="/ebooks/edgar-allan-poe"><a href="https://standardebooks.org/ebooks/edgar-allan-poe" property="schema:url"><span property="schema:name">Edgar Allan Poe</span></a></p>
+</li>
+</ol>"#;
+        let books = parse_standard_ebooks_html(sample);
+        assert_eq!(books.len(), 1);
+        assert_eq!(
+            books.first().map(|b| (
+                b.title.as_str(),
+                b.author.as_str(),
+                b.source,
+                b.epub_url.as_deref(),
+            )),
+            Some((
+                "Short Fiction & Tales",
+                "Edgar Allan Poe",
+                "SE",
+                Some("https://standardebooks.org/ebooks/edgar-allan-poe/short-fiction/downloads/edgar-allan-poe_short-fiction.epub?source=download"),
+            ))
+        );
     }
 }

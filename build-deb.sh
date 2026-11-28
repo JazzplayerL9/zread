@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PKG="zread"
-VER="0.2.1"
+VER="0.2.2"
 REV="1"
 ARCH="arm64"
 OUT="${PKG}_${VER}-${REV}_${ARCH}.deb"

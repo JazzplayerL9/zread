@@ -1,7 +1,7 @@
 mod app;
 mod book;
 mod config;
-mod gutenberg;
+mod catalog;
 mod layout;
 mod state;
 mod theme;
