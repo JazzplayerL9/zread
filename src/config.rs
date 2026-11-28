@@ -39,19 +39,31 @@ impl Config {
 
     pub fn load_or_create() -> Self {
         let path = Self::config_path();
-        if let Ok(raw) = std::fs::read_to_string(&path) {
+        Self::load_from(&path)
+    }
+
+    pub fn load_from(path: &PathBuf) -> Self {
+        if let Ok(raw) = std::fs::read_to_string(path) {
             if let Ok(cfg) = serde_json::from_str::<Config>(&raw) {
                 return cfg;
             }
         }
         let cfg = Config::default();
+        cfg.save_to(path);
+        cfg
+    }
+
+    pub fn save(&self) {
+        self.save_to(&Self::config_path());
+    }
+
+    pub fn save_to(&self, path: &PathBuf) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        if let Ok(json) = serde_json::to_string_pretty(&cfg) {
-            let _ = std::fs::write(&path, json);
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(path, json);
         }
-        cfg
     }
 
     pub fn resolved_library_dir(&self) -> PathBuf {
@@ -98,5 +110,26 @@ mod tests {
         assert!(expand_tilde("~/Books").ends_with("Books"));
         assert_eq!(expand_tilde("~"), home_dir());
         assert_eq!(expand_tilde("/tmp/books"), PathBuf::from("/tmp/books"));
+    }
+
+    #[test]
+    fn config_save_and_load_roundtrip() {
+        let path = std::env::temp_dir().join(format!(
+            "zread_config_test_{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let cfg = Config {
+            margin: 2,
+            compact_paragraphs: true,
+            zen_mode: true,
+            ..Config::default()
+        };
+        cfg.save_to(&path);
+        let loaded = Config::load_from(&path);
+        assert_eq!(loaded.margin, 2);
+        assert!(loaded.compact_paragraphs);
+        assert!(loaded.zen_mode);
+        let _ = std::fs::remove_file(&path);
     }
 }

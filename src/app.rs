@@ -106,7 +106,7 @@ impl App {
             book: None,
             paginated: None,
             current_page: 0,
-            last_size: (40, 14),
+            last_size: (0, 0),
             toc_selected: 0,
             help_scroll: 0,
             bm_selected: 0,
@@ -253,16 +253,28 @@ impl App {
     pub fn open_book(&mut self, path: &Path) {
         match Book::load(path) {
             Ok(book) => {
+                let key = book.path.to_string_lossy().to_string();
+                let had_saved = self.state.progress.contains_key(&key);
                 let saved = self.state.get_progress(&book.path);
+                let (w, h) = if self.last_size == (0, 0) {
+                    (40, 14)
+                } else {
+                    self.last_size
+                };
                 self.book = Some(book);
                 self.repaginate(
-                    self.last_size.0,
-                    self.last_size.1,
-                    Some((saved.chapter, saved.para)),
+                    w,
+                    h,
+                    Some((saved.chapter, saved.para, saved.char_offset)),
                 );
                 self.mode = ScreenMode::Reader;
                 self.status_msg = None;
-                self.save_current_progress();
+                if self.last_size != (0, 0) && !had_saved {
+                    self.save_current_progress();
+                } else {
+                    self.state.last_book = Some(key);
+                    self.state.save();
+                }
             }
             Err(e) => {
                 self.status_msg = Some(e);
@@ -272,18 +284,24 @@ impl App {
 
     pub fn ensure_layout(&mut self, width: u16, height: u16) {
         if (width, height) != self.last_size {
+            let was_uninitialized = self.last_size == (0, 0);
             self.last_size = (width, height);
-            if self.book.is_some() {
-                let anchor = self.current_anchor();
+            if let Some(book) = &self.book {
+                let anchor = if was_uninitialized {
+                    let saved = self.state.get_progress(&book.path);
+                    Some((saved.chapter, saved.para, saved.char_offset))
+                } else {
+                    self.current_anchor()
+                };
                 self.repaginate(width, height, anchor);
             }
         }
     }
 
-    fn current_anchor(&self) -> Option<(usize, usize)> {
+    fn current_anchor(&self) -> Option<(usize, usize, usize)> {
         let pag = self.paginated.as_ref()?;
         let page = pag.pages.get(self.current_page)?;
-        Some((page.start_chapter, page.start_para))
+        Some((page.start_chapter, page.start_para, page.start_char))
     }
 
     pub fn margin_chars(&self) -> u16 {
@@ -294,7 +312,7 @@ impl App {
         }
     }
 
-    fn repaginate(&mut self, width: u16, height: u16, anchor: Option<(usize, usize)>) {
+    fn repaginate(&mut self, width: u16, height: u16, anchor: Option<(usize, usize, usize)>) {
         let Some(book) = &self.book else {
             return;
         };
@@ -303,15 +321,17 @@ impl App {
         let chrome_rows = if self.config.zen_mode { 0 } else { 2 };
         let text_h = height.saturating_sub(chrome_rows) as usize;
         let paginated = paginate_book(book, text_w, text_h, self.config.compact_paragraphs);
-        let page_idx = anchor
-            .map_or(0, |(ch, para)| find_page_for_position(&paginated.pages, ch, para));
+        let page_idx = anchor.map_or(0, |(ch, para, char_offset)| {
+            find_page_for_position(&paginated.pages, ch, para, char_offset)
+        });
         self.current_page = page_idx.min(paginated.pages.len().saturating_sub(1));
         self.paginated = Some(paginated);
     }
 
     pub fn save_current_progress(&mut self) {
-        if let (Some(book), Some((ch, para))) = (&self.book, self.current_anchor()) {
-            self.state.set_progress(&book.path, ch, para);
+        if let (Some(book), Some((ch, para, char_offset))) = (&self.book, self.current_anchor()) {
+            self.state
+                .set_progress(&book.path, ch, para, char_offset);
         }
         self.state.save();
     }
@@ -541,6 +561,7 @@ impl App {
             }
             KeyCode::Char('v' | '7') => {
                 self.state.theme_idx = (self.state.theme_idx + 1) % THEMES.len();
+                self.state.save();
             }
             KeyCode::Char('g' | '5') => {
                 self.gut_query.clear();
@@ -638,21 +659,27 @@ KeyCode::PageUp => {
             }
             KeyCode::Char('M') => {
                 self.config.margin = (self.config.margin + 1) % 3;
+                self.config.save();
                 let anchor = self.current_anchor();
                 self.repaginate(self.last_size.0, self.last_size.1, anchor);
+                self.save_current_progress();
             }
             KeyCode::Char('P') => {
                 self.config.compact_paragraphs = !self.config.compact_paragraphs;
+                self.config.save();
                 let anchor = self.current_anchor();
                 self.repaginate(self.last_size.0, self.last_size.1, anchor);
+                self.save_current_progress();
             }
             KeyCode::Char('H') => {
                 self.config.zen_mode = !self.config.zen_mode;
+                self.config.save();
                 let anchor = self.current_anchor();
                 self.repaginate(self.last_size.0, self.last_size.1, anchor);
+                self.save_current_progress();
             }
             KeyCode::Char('t' | '4') => {
-                if let Some((ch, _)) = self.current_anchor() {
+                if let Some((ch, _, _)) = self.current_anchor() {
                     self.toc_selected = ch;
                 }
                 self.mode = ScreenMode::Toc;
@@ -702,7 +729,7 @@ KeyCode::PageUp => {
     }
 
     fn add_current_bookmark(&mut self) {
-        let (Some(book), Some(pag), Some((ch, para))) =
+        let (Some(book), Some(pag), Some((ch, para, _))) =
             (&self.book, &self.paginated, self.current_anchor())
         else {
             return;
@@ -756,7 +783,7 @@ KeyCode::PageUp => {
                 if let (Some(book), Some(pag)) = (&self.book, &self.paginated) {
                     if let Some(bm) = self.state.get_bookmarks(&book.path).get(self.bm_selected) {
                         self.current_page =
-                            find_page_for_position(&pag.pages, bm.chapter, bm.para);
+                            find_page_for_position(&pag.pages, bm.chapter, bm.para, 0);
                     }
                 }
                 self.mode = ScreenMode::Reader;
@@ -868,7 +895,7 @@ KeyCode::PageUp => {
             .and_then(|s| s.to_str())
             .unwrap_or("Book");
         let note_path = notes_dir.join(format!("{safe_stem}.md"));
-        let (ch, _) = self.current_anchor().unwrap_or((0, 0));
+        let (ch, _, _) = self.current_anchor().unwrap_or((0, 0, 0));
         let total = self.paginated.as_ref().map_or(1, |p| p.pages.len().max(1));
         let pct = ((self.current_page + 1) * 100) / total;
 
@@ -993,7 +1020,7 @@ KeyCode::PageUp => {
         let Some(book) = &self.book else {
             return;
         };
-        let (start_ch, start_para) = self.current_anchor().unwrap_or((0, 0));
+        let (start_ch, start_para, _) = self.current_anchor().unwrap_or((0, 0, 0));
         self.rsvp_words.clear();
         let mut start_word_idx = 0usize;
         let mut found_start = false;
@@ -1024,7 +1051,7 @@ KeyCode::PageUp => {
         if let (Some(&(_, ch, para)), Some(pag)) =
             (self.rsvp_words.get(self.rsvp_idx), &self.paginated)
         {
-            self.current_page = find_page_for_position(&pag.pages, ch, para);
+            self.current_page = find_page_for_position(&pag.pages, ch, para, 0);
         }
         self.mode = ScreenMode::Reader;
         self.save_current_progress();
@@ -1078,6 +1105,7 @@ mod tests {
             ],
         };
         app.book = Some(book);
+        app.last_size = (40, 12);
         app.repaginate(40, 12, None);
         app.mode = ScreenMode::Reader;
         app
@@ -1270,5 +1298,41 @@ mod tests {
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(release_esc(KeyCode::Esc));
         assert_eq!(app.mode, ScreenMode::Reader);
+    }
+
+    #[test]
+    fn ensure_layout_preserves_saved_sub_paragraph_position() {
+        let mut app = App::new(None);
+        let long_para = (0..120)
+            .map(|i| format!("token{i:02}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let book = Book {
+            title: "Resume Test".to_string(),
+            path: PathBuf::from("/tmp/zread_resume_test.epub"),
+            chapters: vec![Chapter {
+                title: "C1".to_string(),
+                paragraphs: vec![long_para],
+            }],
+        };
+        // Paginate at target device size (40x10) and pick page 3's exact anchor.
+        app.book = Some(book);
+        app.repaginate(40, 10, None);
+        app.current_page = 3;
+        let expected_anchor = app.current_anchor().unwrap_or((0, 0, 0));
+        assert!(expected_anchor.2 > 0);
+        let book_path = app
+            .book
+            .as_ref()
+            .map_or_default(|b| b.path.clone());
+        app.state
+            .set_progress(&book_path, expected_anchor.0, expected_anchor.1, expected_anchor.2);
+
+        // Simulate fresh launch before terminal size is measured: last_size == (0, 0).
+        app.last_size = (0, 0);
+        app.repaginate(40, 14, Some(expected_anchor));
+        app.ensure_layout(40, 10);
+        assert_eq!(app.current_page, 3);
+        assert_eq!(app.current_anchor(), Some(expected_anchor));
     }
 }

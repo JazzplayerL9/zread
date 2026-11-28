@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 pub struct BookProgress {
     pub chapter: usize,
     pub para: usize,
+    #[serde(default)]
+    pub char_offset: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,10 +71,23 @@ impl AppState {
         self.progress.get(&key).cloned().unwrap_or_default()
     }
 
-    pub fn set_progress(&mut self, book_path: &Path, chapter: usize, para: usize) {
+    pub fn set_progress(
+        &mut self,
+        book_path: &Path,
+        chapter: usize,
+        para: usize,
+        char_offset: usize,
+    ) {
         let key = book_path.to_string_lossy().to_string();
         self.last_book = Some(key.clone());
-        self.progress.insert(key, BookProgress { chapter, para });
+        self.progress.insert(
+            key,
+            BookProgress {
+                chapter,
+                para,
+                char_offset,
+            },
+        );
     }
 
     pub fn get_bookmarks(&self, book_path: &Path) -> &[Bookmark] {
@@ -110,9 +125,12 @@ mod tests {
     fn progress_and_bookmark_dedup_and_bounds() {
         let mut state = AppState::default();
         let path = PathBuf::from("/tmp/sample.epub");
-        state.set_progress(&path, 2, 7);
+        state.set_progress(&path, 2, 7, 42);
         let prog = state.get_progress(&path);
-        assert_eq!((prog.chapter, prog.para), (2, 7));
+        assert_eq!((prog.chapter, prog.para, prog.char_offset), (2, 7, 42));
+
+        let legacy: BookProgress = serde_json::from_str(r#"{"chapter":1,"para":5}"#).unwrap_or_default();
+        assert_eq!((legacy.chapter, legacy.para, legacy.char_offset), (1, 5, 0));
 
         state.add_bookmark(&path, 1, 3, "Ch 2".to_string());
         state.add_bookmark(&path, 1, 3, "Duplicate".to_string());

@@ -6,6 +6,7 @@ pub struct RenderedLine {
     pub text: String,
     pub chapter_idx: usize,
     pub para_idx: usize,
+    pub char_offset: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -13,6 +14,7 @@ pub struct Page {
     pub lines: Vec<String>,
     pub start_chapter: usize,
     pub start_para: usize,
+    pub start_char: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -36,18 +38,13 @@ pub fn paginate_book(
     for (ch_idx, chapter) in book.chapters.iter().enumerate() {
         chapter_first_line.push(all_lines.len());
         for (p_idx, para) in chapter.paragraphs.iter().enumerate() {
-            let formatted;
-            let text_to_wrap = if compact_paragraphs && p_idx > 0 {
-                formatted = format!("  {para}");
-                formatted.as_str()
-            } else {
-                para.as_str()
-            };
-            for wrapped in wrap_paragraph(text_to_wrap, wrap_width) {
+            let indent = compact_paragraphs && p_idx > 0;
+            for (wrapped, char_offset) in wrap_paragraph(para, wrap_width, indent) {
                 all_lines.push(RenderedLine {
                     text: wrapped,
                     chapter_idx: ch_idx,
                     para_idx: p_idx,
+                    char_offset,
                 });
             }
             if !compact_paragraphs {
@@ -55,6 +52,7 @@ pub fn paginate_book(
                     text: String::new(),
                     chapter_idx: ch_idx,
                     para_idx: p_idx,
+                    char_offset: 0,
                 });
             }
         }
@@ -65,6 +63,7 @@ pub fn paginate_book(
             text: "(Empty book)".to_string(),
             chapter_idx: 0,
             para_idx: 0,
+            char_offset: 0,
         });
     }
 
@@ -82,6 +81,7 @@ pub fn paginate_book(
             lines,
             start_chapter: first.chapter_idx,
             start_para: first.para_idx,
+            start_char: first.char_offset,
         });
         idx = end;
     }
@@ -91,6 +91,7 @@ pub fn paginate_book(
             lines: vec!["(Empty book)".to_string()],
             start_chapter: 0,
             start_para: 0,
+            start_char: 0,
         });
     }
 
@@ -111,21 +112,29 @@ pub fn paginate_book(
     }
 }
 
-pub fn find_page_for_position(pages: &[Page], chapter: usize, para: usize) -> usize {
-    pages
-        .iter()
-        .position(|p| (p.start_chapter, p.start_para) >= (chapter, para))
-        .unwrap_or_else(|| pages.len().saturating_sub(1))
+pub fn find_page_for_position(
+    pages: &[Page],
+    chapter: usize,
+    para: usize,
+    char_offset: usize,
+) -> usize {
+    if pages.is_empty() {
+        return 0;
+    }
+    let target = (chapter, para, char_offset);
+    let idx = pages.partition_point(|p| (p.start_chapter, p.start_para, p.start_char) <= target);
+    idx.saturating_sub(1)
 }
 
-fn wrap_paragraph(para: &str, width: usize) -> Vec<String> {
+fn wrap_paragraph(para: &str, width: usize, indent: bool) -> Vec<(String, usize)> {
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut current_len = 0usize;
-    let leading_indent = para.starts_with("  ");
+    let mut line_start_char = 0usize;
+    let mut consumed_chars = 0usize;
 
     for raw_word in para.split_whitespace() {
-        if current.is_empty() && lines.is_empty() && leading_indent && width > 4 {
+        if current.is_empty() && lines.is_empty() && indent && width > 4 {
             current.push_str("  ");
             current_len = 2;
         }
@@ -134,14 +143,26 @@ fn wrap_paragraph(para: &str, width: usize) -> Vec<String> {
         for (piece_idx, word) in pieces.iter().enumerate() {
             let need_space = piece_idx == 0 && !current.is_empty() && current != "  ";
             let word_len = UnicodeWidthStr::width(*word);
+            let word_chars = word.chars().count();
+            let gap_chars = usize::from(piece_idx == 0 && consumed_chars > 0);
+            let piece_start_char = consumed_chars + gap_chars;
             let extra = usize::from(need_space);
 
             if current.is_empty() {
+                line_start_char = piece_start_char;
                 if word_len <= width {
                     current.push_str(word);
                     current_len = word_len;
                 } else {
-                    push_hard_wrapped(word, width, &mut lines, &mut current, &mut current_len);
+                    push_hard_wrapped(
+                        word,
+                        width,
+                        piece_start_char,
+                        &mut lines,
+                        &mut current,
+                        &mut current_len,
+                        &mut line_start_char,
+                    );
                 }
             } else if current_len + extra + word_len <= width {
                 if need_space {
@@ -150,20 +171,30 @@ fn wrap_paragraph(para: &str, width: usize) -> Vec<String> {
                 current.push_str(word);
                 current_len += extra + word_len;
             } else {
-                lines.push(std::mem::take(&mut current));
+                lines.push((std::mem::take(&mut current), line_start_char));
                 current_len = 0;
+                line_start_char = piece_start_char;
                 if word_len <= width {
                     current.push_str(word);
                     current_len = word_len;
                 } else {
-                    push_hard_wrapped(word, width, &mut lines, &mut current, &mut current_len);
+                    push_hard_wrapped(
+                        word,
+                        width,
+                        piece_start_char,
+                        &mut lines,
+                        &mut current,
+                        &mut current_len,
+                        &mut line_start_char,
+                    );
                 }
             }
+            consumed_chars = piece_start_char + word_chars;
         }
     }
 
     if !current.is_empty() {
-        lines.push(current);
+        lines.push((current, line_start_char));
     }
     lines
 }
@@ -201,28 +232,36 @@ fn split_after_breakable(word: &str) -> Vec<&str> {
 fn push_hard_wrapped(
     word: &str,
     width: usize,
-    lines: &mut Vec<String>,
+    word_start_char: usize,
+    lines: &mut Vec<(String, usize)>,
     current: &mut String,
     current_len: &mut usize,
+    line_start_char: &mut usize,
 ) {
     let mut chunk = String::new();
     let mut len = 0;
+    let mut chunk_start = word_start_char;
+    let mut offset = word_start_char;
     for ch in word.chars() {
         let cw = ch.width().unwrap_or(0);
         if len > 0 && len + cw > width {
-            lines.push(std::mem::take(&mut chunk));
+            lines.push((std::mem::take(&mut chunk), chunk_start));
             len = 0;
+            chunk_start = offset;
         }
         chunk.push(ch);
         len += cw;
+        offset += 1;
         if len >= width {
-            lines.push(std::mem::take(&mut chunk));
+            lines.push((std::mem::take(&mut chunk), chunk_start));
             len = 0;
+            chunk_start = offset;
         }
     }
     if !chunk.is_empty() {
         *current = chunk;
         *current_len = len;
+        *line_start_char = chunk_start;
     }
 }
 
@@ -232,9 +271,16 @@ mod tests {
     use crate::book::Chapter;
     use std::path::PathBuf;
 
+    fn wrapped_lines(para: &str, width: usize) -> Vec<String> {
+        wrap_paragraph(para, width, false)
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect()
+    }
+
     #[test]
     fn hyphen_and_slash_wrapping_and_hard_wrap() {
-        let wrapped = wrap_paragraph("twenty-seven-year-old supercalifragilistic end-", 14);
+        let wrapped = wrapped_lines("twenty-seven-year-old supercalifragilistic end-", 14);
         assert_eq!(
             wrapped,
             vec![
@@ -246,11 +292,11 @@ mod tests {
         );
         // Slash-separated URLs/tokens break cleanly after '/'
         assert_eq!(
-            wrap_paragraph("https://cardputer.cc/docs", 16),
+            wrapped_lines("https://cardputer.cc/docs", 16),
             vec!["https://", "cardputer.cc/", "docs"]
         );
         // Exact-width hard-wrapped word (no remainder)
-        assert_eq!(wrap_paragraph("abcd", 2), vec!["ab", "cd"]);
+        assert_eq!(wrapped_lines("abcd", 2), vec!["ab", "cd"]);
     }
 
     #[test]
@@ -285,7 +331,34 @@ mod tests {
         );
         // Relaxed has leading blank lines skipped at page boundaries
         assert!(relaxed.pages.iter().all(|p| p.lines.first().is_some_and(|l| !l.is_empty())));
-        let c2_page = find_page_for_position(&relaxed.pages, 1, 0);
+        let c2_page = find_page_for_position(&relaxed.pages, 1, 0, 0);
         assert_eq!(relaxed.pages.get(c2_page).map(|p| p.start_chapter), Some(1));
+    }
+
+    #[test]
+    fn sub_paragraph_position_lookup_resumes_exact_page() {
+        let long_para = (0..40)
+            .map(|i| format!("word{i:02}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let book = Book {
+            title: "Long".to_string(),
+            path: PathBuf::from("long.txt"),
+            chapters: vec![Chapter {
+                title: "C1".to_string(),
+                paragraphs: vec![long_para],
+            }],
+        };
+        let pag = paginate_book(&book, 20, 4, false);
+        assert!(pag.pages.len() >= 4);
+        for (idx, page) in pag.pages.iter().enumerate() {
+            let found = find_page_for_position(
+                &pag.pages,
+                page.start_chapter,
+                page.start_para,
+                page.start_char,
+            );
+            assert_eq!(found, idx);
+        }
     }
 }
